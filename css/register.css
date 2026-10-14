@@ -1,0 +1,34 @@
+/* Registration shares the sign-in layout, with room for four fields. */
+.register-page .signin-panel { padding-top: 34px; padding-bottom: 30px; }
+.register-page .workspace-label { margin-bottom: 16px; }
+.register-page .signin-panel h1 { font-size: clamp(27px, 2.6vw, 32px); }
+.register-page .auth-switch { margin-top: 22px; margin-bottom: 22px; }
+.register-page .login-form .form-group { margin-bottom: 15px; }
+.register-page .login-form label { margin-bottom: 7px; }
+.register-page .signin-form-footer { margin-top: 21px; padding-top: 17px; }
+.register-field-hint { margin-top: 7px; color: #858b94; font-size: 11px; line-height: 1.6; }
+.register-field-error { margin-top: 7px; color: #bd4b32; font-size: 11px; line-height: 1.6; }
+.register-page .login-form input[aria-invalid="true"] { border-color: #d98069; }
+.register-page .caps-lock-note { margin: 0 0 13px; }
+.register-page .register-preview { margin-top: 48px; margin-bottom: 45px; }
+.register-steps { margin-top: 20px; padding: 0; list-style: none; }
+.register-steps li { display: flex; align-items: center; gap: 12px; padding: 15px 0; border-top: 1px solid #f2eeeb; }
+.register-step-number { display: grid; place-items: center; width: 31px; height: 31px; flex-shrink: 0; border-radius: 9px; background: #f6f4f1; color: #aba098; font-size: 10px; font-weight: 700; }
+.register-steps li:first-child .register-step-number { background: #fff0e5; color: #df7b4f; }
+.register-steps li strong { display: block; color: #626975; font-size: 12px; font-weight: 600; }
+.register-steps li div > span { display: block; margin-top: 4px; color: #97969a; font-size: 9px; line-height: 1.6; }
+.register-step-now { margin-left: auto; color: #cb8966; font-size: 6px; letter-spacing: .06em; white-space: nowrap; }
+@media (max-width: 960px) {
+    .register-step-now { display: none; }
+    .register-steps li { gap: 9px; }
+    .register-steps li strong { font-size: 11px; }
+}
+@media (max-width: 760px) {
+    .register-page .signin-panel { padding: 28px 30px; }
+    .register-page .signin-story h2 { font-size: 29px; }
+    .register-page .signin-description { font-size: 12px; }
+}
+@media (max-width: 380px) {
+    .register-page .signin-panel { padding: 25px 22px; }
+    .register-page .signin-story h2 { font-size: 27px; }
+}

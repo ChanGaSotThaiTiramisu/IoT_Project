@@ -1,0 +1,538 @@
+<?php
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit;
+}
+
+require_once "db.php";
+
+/* =========================
+   START SESSION
+========================= */
+
+if (isset($_GET['start'])) {
+
+    $id = intval($_GET['start']);
+
+    $stmt = $conn->prepare(
+        "UPDATE sessions
+         SET status = 'running',
+             started_at = NOW()
+         WHERE id = ?
+         AND status = 'waiting'"
+    );
+
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+
+    header("Location: sessions.php");
+    exit;
+}
+
+
+/* =========================
+   FINISH SESSION
+========================= */
+
+if (isset($_GET['finish'])) {
+
+    $id = intval($_GET['finish']);
+
+    $stmt = $conn->prepare(
+        "UPDATE sessions
+         SET status = 'finished',
+             ended_at = NOW()
+         WHERE id = ?
+         AND status = 'running'"
+    );
+
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+
+    header("Location: sessions.php");
+    exit;
+}
+
+
+/* =========================
+   CREATE SESSION
+========================= */
+
+if (
+    $_SERVER["REQUEST_METHOD"] === "POST"
+    && isset($_POST['create_session'])
+) {
+
+    $session_name = trim($_POST['session_name']);
+    $question_set_id = intval($_POST['question_set_id']);
+
+    if ($session_name !== "" && $question_set_id > 0) {
+
+        $stmt = $conn->prepare(
+            "INSERT INTO sessions
+            (session_name, question_set_id, status)
+            VALUES (?, ?, 'waiting')"
+        );
+
+        $stmt->bind_param(
+            "si",
+            $session_name,
+            $question_set_id
+        );
+
+        $stmt->execute();
+
+        header("Location: sessions.php?created=1");
+        exit;
+    }
+}
+
+
+/* =========================
+   GET QUESTION SETS
+========================= */
+
+$question_sets = [];
+
+$result = $conn->query(
+    "SELECT *
+     FROM question_sets
+     ORDER BY id DESC"
+);
+
+while ($row = $result->fetch_assoc()) {
+    $question_sets[] = $row;
+}
+
+
+/* =========================
+   GET SESSIONS
+========================= */
+
+$sessions = [];
+
+$result = $conn->query(
+    "SELECT
+        s.*,
+        qs.set_name,
+        COUNT(r.id) AS response_count
+     FROM sessions s
+
+     LEFT JOIN question_sets qs
+        ON s.question_set_id = qs.id
+
+     LEFT JOIN responses r
+        ON s.id = r.session_id
+
+     GROUP BY s.id
+
+     ORDER BY s.id DESC"
+);
+
+while ($row = $result->fetch_assoc()) {
+    $sessions[] = $row;
+}
+
+?>
+
+<!DOCTYPE html>
+
+<html lang="vi">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>Sessions - ARS</title>
+
+<link rel="stylesheet"
+      href="css/style.css">
+
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- SIDEBAR -->
+
+    <aside class="sidebar">
+
+        <h2>ARS</h2>
+
+        <p class="sidebar-subtitle">
+            Audience Response System
+        </p>
+
+        <a href="dashboard.php">
+            Dashboard
+        </a>
+
+        <a href="students.php">
+            Students
+        </a>
+
+        <a href="questions.php">
+            Question Bank
+        </a>
+
+        <a href="devices.php">
+            Devices
+        </a>
+
+        <a href="sessions.php"
+           class="active">
+            Sessions
+        </a>
+
+        <a href="results.php">
+            Results
+        </a>
+
+        <a href="logout.php"
+           class="logout-link">
+            Logout
+        </a>
+
+    </aside>
+
+
+    <!-- MAIN -->
+
+    <main class="main-content">
+
+        <div class="topbar">
+
+            <div>
+
+                <h1>Sessions</h1>
+
+                <p>
+                    Quản lý các phiên khảo sát
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <?php if (isset($_GET['created'])): ?>
+
+            <div class="success-message">
+
+                Tạo Session thành công.
+
+            </div>
+
+        <?php endif; ?>
+
+
+        <!-- CREATE SESSION -->
+
+        <div class="content-card">
+
+            <h2>Tạo Session mới</h2>
+
+            <p class="help-text">
+
+                Chọn bộ câu hỏi và tạo một phiên khảo sát mới.
+
+            </p>
+
+            <form method="POST">
+
+                <div class="form-row">
+
+                    <div>
+
+                        <label>
+                            Tên Session
+                        </label>
+
+                        <input
+                            type="text"
+                            name="session_name"
+                            placeholder="Ví dụ: Khảo sát IoT - Tuần 3"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div>
+
+                        <label>
+                            Question Set
+                        </label>
+
+                        <select
+                            name="question_set_id"
+                            required
+                        >
+
+                            <option value="">
+                                -- Chọn bộ câu hỏi --
+                            </option>
+
+                            <?php foreach (
+                                $question_sets
+                                as $set
+                            ): ?>
+
+                                <option
+                                    value="<?= $set['id'] ?>"
+                                >
+
+                                    <?= htmlspecialchars(
+                                        $set['set_name']
+                                    ) ?>
+
+                                </option>
+
+                            <?php endforeach; ?>
+
+                        </select>
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    type="submit"
+                    name="create_session"
+                    class="primary-btn"
+                >
+
+                    + Tạo Session
+
+                </button>
+
+            </form>
+
+        </div>
+
+
+        <!-- SESSION LIST -->
+
+        <div class="content-card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <h2>Danh sách Sessions</h2>
+
+                    <p>
+                        Các phiên khảo sát
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <?php if (count($sessions) === 0): ?>
+
+                <p>
+                    Chưa có Session nào.
+                </p>
+
+            <?php else: ?>
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>ID</th>
+
+                                <th>Session</th>
+
+                                <th>Question Set</th>
+
+                                <th>Status</th>
+
+                                <th>Responses</th>
+
+                                <th>Thời gian</th>
+
+                                <th>Thao tác</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody>
+
+                        <?php foreach (
+                            $sessions
+                            as $session
+                        ): ?>
+
+                            <tr>
+
+                                <td>
+                                    <?= $session['id'] ?>
+                                </td>
+
+
+                                <td>
+
+                                    <strong>
+                                        <?= htmlspecialchars(
+                                            $session['session_name']
+                                        ) ?>
+                                    </strong>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?= htmlspecialchars(
+                                        $session['set_name'] ?? ''
+                                    ) ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?php if (
+                                        $session['status']
+                                        === 'waiting'
+                                    ): ?>
+
+                                        <span class="status waiting">
+                                            WAITING
+                                        </span>
+
+                                    <?php elseif (
+                                        $session['status']
+                                        === 'running'
+                                    ): ?>
+
+                                        <span class="status running">
+                                            RUNNING
+                                        </span>
+
+                                    <?php else: ?>
+
+                                        <span class="status finished">
+                                            FINISHED
+                                        </span>
+
+                                    <?php endif; ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?= $session[
+                                        'response_count'
+                                    ] ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?php if (
+                                        $session['started_at']
+                                    ): ?>
+
+                                        <?= $session[
+                                            'started_at'
+                                        ] ?>
+
+                                    <?php else: ?>
+
+                                        Chưa bắt đầu
+
+                                    <?php endif; ?>
+
+                                </td>
+
+
+                                <td>
+
+                                    <?php if (
+                                        $session['status']
+                                        === 'waiting'
+                                    ): ?>
+
+                                        <a
+                                            href="sessions.php?start=<?= $session['id'] ?>"
+                                            class="action-btn"
+                                        >
+                                            ▶ Start
+                                        </a>
+
+                                    <?php elseif (
+                                        $session['status']
+                                        === 'running'
+                                    ): ?>
+
+                                        <a
+                                            href="results.php?session=<?= $session['id'] ?>"
+                                            class="action-btn"
+                                        >
+                                            Live Results
+                                        </a>
+
+                                        <a
+                                            href="sessions.php?finish=<?= $session['id'] ?>"
+                                            class="delete-btn"
+                                            onclick="return confirm('Kết thúc Session này?');"
+                                        >
+                                            ■ Stop
+                                        </a>
+
+                                    <?php else: ?>
+
+                                        <a
+                                            href="results.php?session=<?= $session['id'] ?>"
+                                            class="action-btn"
+                                        >
+                                            Results
+                                        </a>
+
+                                    <?php endif; ?>
+
+                                </td>
+
+                            </tr>
+
+                        <?php endforeach; ?>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            <?php endif; ?>
+
+        </div>
+
+    </main>
+
+</div>
+
+</body>
+
+</html>
