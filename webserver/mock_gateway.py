@@ -10,9 +10,7 @@ from urllib.parse import urljoin
 # =====================================================
 
 API_URL = os.environ.get("ARS_API_URL", "http://localhost/ars2/api_response.php")
-API_TOKEN = os.environ.get("ARS_API_TOKEN", "")
-if not API_TOKEN:
-    raise SystemExit("Set ARS_API_TOKEN to the API key shown on the Devices page.")
+
 
 SESSION_ID = int(os.environ.get("ARS_SESSION_ID", "1"))
 
@@ -34,7 +32,6 @@ def get_session_info():
         response = requests.get(
             urljoin(API_URL, "api_gateway_state.php"),
             params={"session_id": SESSION_ID, "device_id": DEVICES[0]},
-            headers={"Authorization": f"Bearer {API_TOKEN}"},
             timeout=5,
         )
         response.raise_for_status()
@@ -78,7 +75,6 @@ def send_packet(
             API_URL,
 
             data=data,
-            headers={"Authorization": f"Bearer {API_TOKEN}"},
 
             timeout=5
 

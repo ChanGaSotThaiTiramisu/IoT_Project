@@ -1,8 +1,16 @@
 <?php
 
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    http_response_code(405);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
+    exit;
+}
+define('ARS_GATEWAY_REQUEST', true);
+define('ARS_GATEWAY_AUTO_SESSION', ($_GET['auto_session'] ?? '') === '1' && (int) ($_GET['session_id'] ?? 0) === 0);
 require_once "account.php";
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET') { account_require_owned($conn, 'sessions', (int) ($_GET['session_id'] ?? 0)); }
+if (!ARS_GATEWAY_AUTO_SESSION) { account_require_owned($conn, 'sessions', (int) ($_GET['session_id'] ?? 0)); }
 
 
 header("Content-Type: application/json; charset=utf-8");
@@ -29,7 +37,7 @@ $device_code = isset($_GET["device_id"])
     ? trim($_GET["device_id"])
     : "";
 
-if ($session_id <= 0 || $device_code === "") {
+if ((!ARS_GATEWAY_AUTO_SESSION && $session_id <= 0) || $device_code === "") {
     reply_json(400, [
         "success" => false,
         "message" => "session_id and device_id are required."
@@ -54,22 +62,38 @@ if (!$device) {
     ]);
 }
 
-$stmt = $conn->prepare(
-    "SELECT id, status, current_question_id
-     FROM sessions
-     WHERE id = ?
-     LIMIT 1"
-);
-$stmt->bind_param("i", $session_id);
-$stmt->execute();
-$session = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+if (ARS_GATEWAY_AUTO_SESSION) {
+    $stmt = $conn->prepare(
+        "SELECT id, status, current_question_id FROM sessions
+         WHERE user_id = ? AND status = 'running' ORDER BY id DESC LIMIT 2"
+    );
+    $stmt->bind_param('i', $account_id);
+    $stmt->execute();
+    $sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    $session = count($sessions) === 1 ? $sessions[0] : [
+        'id' => null,
+        'status' => count($sessions) > 1 ? 'ambiguous' : 'waiting',
+        'current_question_id' => null,
+    ];
+} else {
+    $stmt = $conn->prepare(
+        "SELECT id, status, current_question_id
+         FROM sessions
+         WHERE id = ?
+         LIMIT 1"
+    );
+    $stmt->bind_param("i", $session_id);
+    $stmt->execute();
+    $session = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
-if (!$session) {
-    reply_json(404, [
-        "success" => false,
-        "message" => "Session not found."
-    ]);
+    if (!$session) {
+        reply_json(404, [
+            "success" => false,
+            "message" => "Session not found."
+        ]);
+    }
 }
 
 // Gateway đang liên lạc được với thiết bị.
@@ -91,7 +115,7 @@ reply_json(200, [
         "device_name" => $device["device_name"]
     ],
     "session" => [
-        "id" => intval($session["id"]),
+        "id" => $session["id"] === null ? null : intval($session["id"]),
         "status" => $session["status"],
         "current_question_id" => $session["current_question_id"] === null
             ? null

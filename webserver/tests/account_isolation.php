@@ -63,6 +63,54 @@ try {
     fclose($socket);
     $server = proc_open([PHP_BINARY, '-d', "session.save_path=$dir", '-S', "127.0.0.1:$port", '-t', $root], [0 => ['pipe','r'], 1 => ['file', "$dir/server.log", 'a'], 2 => ['file', "$dir/server.log", 'a']], $pipes);
     usleep(300000);
+    $auto_url = 'api_gateway_state.php?auto_session=1&device_id='.$tag;
+    check(request_page($auto_url, null)[0] === 409, 'Auto selection refuses device codes shared by accounts');
+    check(request_page('api_gateway_state.php?auto_session=1&device_id=missing-'.$tag, null)[0] === 404, 'Auto selection rejects unknown devices');
+    $conn->query("UPDATE devices SET device_code='{$tag}_unique' WHERE id=".$fixtures[0]['device']);
+    $auto_url .= '_unique';
+    check(request_page($auto_url, 1)[0] === 404, 'Signed-in account cannot discover another account device');
+    $auto = json_decode(request_page($auto_url, null)[1], true);
+    check($auto['success'] && $auto['session']['status'] === 'waiting' && $auto['session']['id'] === null, 'Known device stays accepted with no running session');
+    $conn->query("UPDATE sessions SET status='running' WHERE id=".$fixtures[1]['sid']);
+    $auto = json_decode(request_page($auto_url, null)[1], true);
+    check($auto['session']['status'] === 'waiting', 'Auto selection ignores another account running session');
+    $conn->query("UPDATE sessions SET status='running' WHERE id=".$fixtures[0]['sid']);
+    $auto = json_decode(request_page($auto_url, null)[1], true);
+    check($auto['session']['id'] === $fixtures[0]['sid'], 'Auto selection finds the owner running session');
+    $owner = $fixtures[0];
+    $conn->query("INSERT INTO sessions (user_id,session_name,question_set_id,status,current_question_id,advance_mode)
+        VALUES ({$owner['uid']},'auto test',{$owner['set']},'running',{$owner['question']},'manual')");
+    $new_session = $conn->insert_id;
+    $auto = json_decode(request_page($auto_url, null)[1], true);
+    check($auto['success'] && $auto['session']['status'] === 'ambiguous' && $auto['session']['id'] === null, 'Multiple running sessions keep BLE accepted without choosing one');
+    $conn->query("UPDATE sessions SET status='finished' WHERE id={$owner['sid']}");
+    $auto = json_decode(request_page($auto_url, null)[1], true);
+    check($auto['session']['id'] === $new_session, 'Auto selection switches to a newly started session');
+    $conn->query("DELETE FROM sessions WHERE id=$new_session");
+    $conn->query("UPDATE sessions SET status='finished' WHERE id=".$fixtures[1]['sid']);
+    $conn->query("UPDATE devices SET device_code='$tag' WHERE id=".$fixtures[0]['device']);
+    check(request_page('api_device_presence.php', null)[0] === 401, 'Anonymous device presence blocked');
+    check(request_page('api_device_presence.php', 0, [])[0] === 405, 'Device presence is read-only');
+    $presence_device = $fixtures[0]['device'];
+    $conn->query("UPDATE devices SET status='online', last_seen=NOW() WHERE id=".$fixtures[1]['device']);
+    foreach ([
+        ['online', 'NOW()', 'online'],
+        ['online', 'NOW() - INTERVAL 11 SECOND', 'offline'],
+        ['online', 'NULL', 'offline'],
+        ['offline', 'NOW()', 'offline'],
+    ] as [$stored_status, $last_seen, $expected]) {
+        $conn->query("UPDATE devices SET status='$stored_status', last_seen=$last_seen WHERE id=$presence_device");
+        [$status, $body] = request_page('api_device_presence.php', 0);
+        $presence = json_decode($body, true)['devices'];
+        check($status === 200 && count($presence) === 1 && (int)$presence[0]['id'] === $presence_device, 'Presence only exposes own devices');
+        check($presence[0]['status'] === $expected, "Presence: $stored_status / $last_seen becomes $expected");
+        $online_count = $expected === 'online' ? 1 : 0;
+        check(str_contains(request_page('dashboard.php', 0)[1], "data-devices-online>$online_count</h2>"), 'Dashboard uses heartbeat expiry');
+        check(str_contains(request_page('devices.php', 0)[1], "class=\"device-status device-$expected\" data-device-id=\"$presence_device\""), 'Device badge uses heartbeat expiry');
+    }
+    check(request_page('api_gateway_state.php?session_id='.$fixtures[0]['sid'].'&device_id='.$tag, null)[0] === 200, 'Gateway heartbeat reconnects device');
+    $presence = json_decode(request_page('api_device_presence.php', 0)[1], true)['devices'];
+    check($presence[0]['status'] === 'online', 'Device returns online after a new heartbeat');
     foreach ($fixtures as $i => $own) {
         $other = $fixtures[1-$i];
         foreach (['dashboard.php','students.php','students.php?search='.$tag,'questions.php','devices.php','sessions.php','results.php','import_questions.php','import_students.php'] as $page) {
@@ -80,12 +128,12 @@ try {
         check(request_page('import_questions.php',$i,['import_file'=>1,'question_set_id'=>$other['set']])[0] === 404,'Foreign import blocked');
         check(request_page('sessions.php',$i,['session_action'=>'reopen','session_id'=>$own['sid'],'csrf_token'=>'test'])[0] === 302,'Own reopen succeeds');
         foreach (["results.php?session={$own['sid']}","presentation.php?session={$own['sid']}","api_results.php?session={$own['sid']}"] as $page) check(request_page($page,$i)[0] === 200, "Own page works: $page");
-        check(request_page("api_gateway_state.php?session_id={$own['sid']}&device_id=$tag",null,null,$own['token'])[0] === 200,'Own gateway works');
-        check(request_page("api_gateway_state.php?session_id={$other['sid']}&device_id=$tag",null,null,$own['token'])[0] === 404,'Foreign gateway blocked');
+        check(request_page("api_gateway_state.php?session_id={$own['sid']}&device_id=$tag",null)[0] === 200,'Own gateway works');
+        check(request_page("api_gateway_state.php?session_id={$other['sid']}&device_id=$tag",$i)[0] === 404,'Foreign gateway blocked');
         $packet = ['packet_id'=>2,'session_id'=>$own['sid'],'question_id'=>$own['question'],'device_id'=>$tag,'answer'=>'B'];
-        check(request_page('api_response.php',null,$packet,$own['token'])[0] === 200,'Own response works');
+        check(request_page('api_response.php',null,$packet)[0] === 200,'Own response works');
         $packet['session_id'] = $other['sid'];
-        check(request_page('api_response.php',null,$packet,$own['token'])[0] === 404,'Foreign response blocked');
+        check(request_page('api_response.php',$i,$packet)[0] === 404,'Foreign response blocked');
         check(request_page('api_next_question.php',$i,['session_id'=>$other['sid'],'current_question_id'=>$other['question']])[0] === 404,'Foreign advance blocked');
         check(request_page('questions.php',$i,['create_set'=>1,'set_name'=>$tag.'_new','description'=>''])[0] === 302,'Create owned question set');
         check(request_page('sessions.php',$i,['create_session'=>1,'session_name'=>'Created '.$tag,'question_set_id'=>$own['set']])[0] === 302,'Create owned session');
@@ -99,10 +147,11 @@ try {
     check((int) $conn->query('SELECT COUNT(*) n FROM questions WHERE question_set_id='.$fixtures[0]['set'])->fetch_assoc()['n'] === 2, 'Import creates own question');
     check((int) $conn->query('SELECT COUNT(*) n FROM questions WHERE question_set_id='.$fixtures[1]['set'])->fetch_assoc()['n'] === 1, 'Import preserves other question set');
     check(request_page('api_results.php?session='.$fixtures[0]['sid'],null)[0] === 401,'Anonymous results blocked');
-    check(request_page('api_response.php',null,[])[0] === 401,'Anonymous response blocked');
-    check(request_page('api_next_question.php',null,[])[0] === 401,'Anonymous advance blocked');
-    check(request_page('api_gateway_state.php',null)[0] === 401,'Anonymous gateway blocked');
-    check(request_page('api_gateway_state.php',null,null,str_repeat('0',64))[0] === 401,'Invalid gateway key blocked');
+    check(request_page('api_response.php',null,[])[0] === 400,'Gateway response requires session ID');
+    check(request_page('api_next_question.php',null,[])[0] === 400,'Gateway advance requires session ID');
+    check(request_page('api_gateway_state.php',null)[0] === 400,'Gateway state requires session ID');
+    check(request_page('api_gateway_state.php?session_id=0&device_id=missing',null)[0] === 400,'Invalid session rejected');
+    check(request_page('api_next_question.php',null,['session_id'=>$fixtures[1]['sid'],'current_question_id'=>$fixtures[1]['question']])[0] === 200,'Keyless advance works');
     check(request_page('sessions.php',0,['session_action'=>'delete','session_id'=>$fixtures[0]['sid'],'csrf_token'=>'test'])[0] === 302,'Own delete works');
     check($conn->query('SELECT id FROM responses WHERE session_id='.$fixtures[0]['sid'])->num_rows === 0,'Delete cascades own responses');
     check($conn->query('SELECT id FROM responses WHERE session_id='.$fixtures[1]['sid'])->num_rows === 1,'Other responses preserved');

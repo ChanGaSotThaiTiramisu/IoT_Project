@@ -8,7 +8,7 @@ import mysql.connector
 # CONFIG
 # =====================================================
 
-API_URL = "http://localhost/ars/api_response.php"
+API_URL = "http://localhost/ars2/webserver/api_response.php"
 
 SESSION_ID = 1
 

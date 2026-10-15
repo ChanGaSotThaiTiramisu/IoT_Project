@@ -7,21 +7,11 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once "account.php";
+require_once "device_presence.php";
 
 if (isset($_GET['delete'])) { account_require_owned($conn, 'devices', (int) $_GET['delete']); }
 
 
-// Generate a per-account gateway credential only when one is not already present.
-$gateway_token = bin2hex(random_bytes(32));
-$token_stmt = $conn->prepare('UPDATE users SET gateway_token = ? WHERE id = ? AND gateway_token IS NULL');
-$token_stmt->bind_param('si', $gateway_token, $account_id);
-$token_stmt->execute();
-$token_stmt->close();
-$token_stmt = $conn->prepare('SELECT gateway_token FROM users WHERE id = ?');
-$token_stmt->bind_param('i', $account_id);
-$token_stmt->execute();
-$gateway_token = $token_stmt->get_result()->fetch_assoc()['gateway_token'];
-$token_stmt->close();
 header('Cache-Control: no-store');
 
 $message = "";
@@ -91,7 +81,7 @@ $result = $conn->query(
         d.id,
         d.device_code,
         d.device_name,
-        d.status,
+        CASE WHEN " . DEVICE_ONLINE_SQL . " THEN 'online' ELSE 'offline' END AS status,
         d.last_seen,
         s.student_code,
         s.full_name,
@@ -184,14 +174,6 @@ $result = $conn->query(
         <div class="workspace-two-column">
         <!-- ADD DEVICE -->
 
-        <section class="content-card device-gateway-card">
-            <h2>Gateway connection</h2>
-            <p>Connect your gateway using your account key. Keep this key private.</p>
-            <details>
-                <summary>Show gateway API key</summary>
-                <p><code>Authorization: Bearer <?= htmlspecialchars($gateway_token) ?></code></p>
-            </details>
-        </section>
 
         <div class="content-card">
 
@@ -352,13 +334,13 @@ $result = $conn->query(
 
                                 <?php if ($device["status"] === "online"): ?>
 
-                                    <span class="device-status device-online">
+                                    <span class="device-status device-online" data-device-id="<?= (int) $device['id'] ?>">
                                         ONLINE
                                     </span>
 
                                 <?php else: ?>
 
-                                    <span class="device-status device-offline">
+                                    <span class="device-status device-offline" data-device-id="<?= (int) $device['id'] ?>">
                                         OFFLINE
                                     </span>
 
@@ -415,6 +397,7 @@ $result = $conn->query(
 
 </div>
 
+<script src="js/device_presence.js"></script>
 </body>
 
 </html>

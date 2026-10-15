@@ -10,6 +10,9 @@ if (!isset($_SESSION["user_id"])) {
 }
 
 require_once "account.php";
+require_once "device_presence.php";
+
+header('Cache-Control: no-store');
 
 $username = $_SESSION["username"];
 $fullname = $_SESSION["full_name"];
@@ -28,7 +31,7 @@ $count_queries = [
     "question_sets" => "SELECT COUNT(*) AS total FROM question_sets WHERE user_id = {$account_id}",
     "questions" => "SELECT COUNT(*) AS total FROM questions q JOIN question_sets qs ON qs.id = q.question_set_id WHERE qs.user_id = {$account_id}",
     "devices" => "SELECT COUNT(*) AS total FROM devices WHERE user_id = {$account_id}",
-    "devices_online" => "SELECT COUNT(*) AS total FROM devices WHERE user_id = {$account_id} AND status = 'online'",
+    "devices_online" => "SELECT COUNT(*) AS total FROM devices d WHERE d.user_id = {$account_id} AND " . DEVICE_ONLINE_SQL,
     "active_sessions" => "SELECT COUNT(*) AS total FROM sessions WHERE user_id = {$account_id} AND status = 'running'",
 ];
 
@@ -169,7 +172,7 @@ if ($active_session) {
                 <span class="workspace-stat-icon"><?= workspace_icon('devices') ?></span>
                 <a href="devices.php">Devices Online</a>
 
-                <h2><?= $dashboard_counts["devices_online"] ?></h2>
+                <h2 data-devices-online><?= $dashboard_counts["devices_online"] ?></h2>
 
                 <small><?= $dashboard_counts["devices"] ?> devices registered</small>
 
@@ -266,6 +269,7 @@ if ($active_session) {
 
 </div>
 
+<script src="js/device_presence.js"></script>
 </body>
 
 </html>

@@ -1,5 +1,12 @@
 <?php
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
+    exit;
+}
+define('ARS_GATEWAY_REQUEST', true);
 require_once "account.php";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') { account_require_owned($conn, 'sessions', (int) ($_POST['session_id'] ?? 0)); }
